@@ -13,9 +13,15 @@ import sys
 import tempfile
 from pathlib import Path
 
+import gi
+gi.require_version('Rsvg', '2.0')
+from gi.repository import Rsvg
+
 import cairo
 import numpy as np
 import tqdm
+
+import base64
 
 _is_main = False
 
@@ -108,25 +114,29 @@ def envelope(wav, window, stride):
     return out
 
 
-def draw_env(envs, out, fg_colors, bg_color, size):
+def draw_env(envs, out, fg_colors, bg_color, size, image):
     """
     Internal function, draw a single frame (two frames for stereo) using cairo and save
     it to the `out` file as png. envs is a list of envelopes over channels, each env
     is a float[bars] representing the height of the envelope to draw. Each entry will
     be represented by a bar.
     """
-    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, *size)
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1920, 1080)
     ctx = cairo.Context(surface)
+
+    svg = Rsvg.Handle.new_from_data(image.encode("utf-8"))
+    svg.render_cairo(ctx)
     ctx.scale(*size)
 
-    ctx.set_source_rgb(*bg_color)
-    ctx.rectangle(0, 0, 1, 1)
-    ctx.fill()
+
+
 
     K = len(envs) # Number of waves to draw (waves are stacked vertically)
     T = len(envs[0]) # Numbert of time steps
     pad_ratio = 0.1 # spacing ratio between 2 bars
-    width = 1. / (T * (1 + 2 * pad_ratio))
+    base_width = 0.86302083333
+    left_pad = (1 - base_width) / 2;
+    width = base_width / (T * (1 + 2 * pad_ratio))
     pad = pad_ratio * width
     delta = 2 * pad + width
 
@@ -135,15 +145,15 @@ def draw_env(envs, out, fg_colors, bg_color, size):
         for i in range(K):
             half = 0.5 * envs[i][step] # (semi-)height of the bar
             half /= K # as we stack K waves vertically
-            midrule = (1+2*i)/(2*K) # midrule of i-th wave
+            midrule = 0.95 # midrule of i-th wave
             ctx.set_source_rgb(*fg_colors[i])
-            ctx.move_to(pad + step * delta, midrule - half)
-            ctx.line_to(pad + step * delta, midrule)
+            ctx.move_to(pad + step * delta + left_pad, midrule - half)
+            ctx.line_to(pad + step * delta + left_pad, midrule)
             ctx.stroke()
-            ctx.set_source_rgba(*fg_colors[i], 0.8)
-            ctx.move_to(pad + step * delta, midrule)
-            ctx.line_to(pad + step * delta, midrule + 0.9 * half)
-            ctx.stroke()
+            #ctx.set_source_rgba(*fg_colors[i], 0.8)
+            #ctx.move_to(pad + step * delta, midrule)
+            #ctx.line_to(pad + step * delta, midrule + 0.9 * half)
+            #ctx.stroke()
 
     surface.write_to_png(out)
 
@@ -151,6 +161,11 @@ def draw_env(envs, out, fg_colors, bg_color, size):
 def interpole(x1, y1, x2, y2, x):
     return y1 + (y2 - y1) * (x - x1) / (x2 - x1)
 
+from colorthief import ColorThief
+import colorsys
+
+import os, sys
+from PIL import Image
 
 def visualize(audio,
               tmp,
@@ -167,6 +182,7 @@ def visualize(audio,
               bg_color=(1, 1, 1),
               size=(400, 400),
               stereo=False,
+              cover_path="cover.png"
               ):
     """
     Generate the visualisation for the `audio` file, using a `tmp` folder and saving the final
@@ -217,6 +233,57 @@ def visualize(audio,
     smooth = np.hanning(bars)
 
     print("Generating the frames...")
+
+    svg = ""
+    with open("base.svg", "r") as f:
+        svg = f.read()
+
+    color_thief = ColorThief(cover_path)
+    dominant_color = color_thief.get_palette(color_count=10)
+    dom_col_hsl = []
+    for x in dominant_color:
+        dom_col_hsl.append(colorsys.rgb_to_hsv(x[0], x[1], x[2]))
+    print(dominant_color);
+    print(dom_col_hsl)
+    hue = 0
+    averageSaturation = 0
+    found = False
+    for x in dom_col_hsl:
+        averageSaturation += x[1]
+        if x[1] > 0.1 and found == False:
+            found = True
+            print("hue is " + str(x[0]*255))
+            hue = x[0]*255
+
+    averageSaturation = averageSaturation / 10
+    print("average saturation: " + str(averageSaturation))
+    if averageSaturation > 0.1:
+        svg = svg.replace("var(--backdrop)", "hsl("+str(hue)+", 36%, 22%)")
+        svg = svg.replace("var(--lower)", "hsl("+str(hue)+", 36%, 15%)")
+        svg = svg.replace("var(--bar)", "hsl("+str(hue)+", 36%, 31%)")
+        svg = svg.replace("var(--text)", "hsl("+str(hue)+", 100%, 96%)")
+    else:
+        svg = svg.replace("var(--backdrop)", "hsl("+str(hue)+", 0%, 22%)")
+        svg = svg.replace("var(--lower)", "hsl("+str(hue)+", 0%, 15%)")
+        svg = svg.replace("var(--bar)", "hsl("+str(hue)+", 0%, 31%)")
+        svg = svg.replace("var(--text)", "hsl("+str(hue)+", 0%, 96%)")
+    cover = ""
+
+    im = Image.open(cover_path)
+    im.thumbnail((404, 404), Image.Resampling.LANCZOS)
+    im.save("cover-compressed.png", "PNG")
+    with open('cover-compressed.png', 'rb') as imagefile:
+        cover = base64.b64encode(imagefile.read()).decode('ascii')
+
+    imagedata = "data:image/png;base64," 
+    imagedata += cover
+
+    svg = svg.replace("IMAGEDATA", imagedata)
+    svg = svg.replace("LABELS", "UNTONE Music")
+    svg = svg.replace("ARTISTS", "Artist Goes Here :)")
+    svg = svg.replace("DATE", "19th December 2023")
+    svg = svg.replace("TRACKNAME", "Track Name")
+
     for idx in tqdm.tqdm(range(frames), unit=" frames", ncols=80):
         pos = (((idx / rate)) * sr) / stride / bars
         off = int(pos)
@@ -233,7 +300,7 @@ def visualize(audio,
             denv = (1 - w) * env1 + w * env2
             denv *= smooth
             denvs.append(denv)
-        draw_env(denvs, tmp / f"{idx:06d}.png", (fg_color, fg_color2), bg_color, size)
+        draw_env(denvs, tmp / f"{idx:06d}.png", (fg_color, fg_color2), bg_color, size, svg)
 
     audio_cmd = []
     if seek is not None:
@@ -269,12 +336,12 @@ def parse_color(colorstr):
 def main():
     parser = argparse.ArgumentParser(
         'seewav', description="Generate a nice mp4 animation from an audio file.")
-    parser.add_argument("-r", "--rate", type=int, default=60, help="Video framerate.")
+    parser.add_argument("-r", "--rate", type=int, default=30, help="Video framerate.")
     parser.add_argument("--stereo", action='store_true',
                         help="Create 2 waveforms for stereo files.")
     parser.add_argument("-c",
                         "--color",
-                        default=[0.03, 0.6, 0.3],
+                        default=[1,1,1],
                         type=parse_color,
                         dest="color",
                         help="Color of the bars as `r,g,b` in [0, 1].")
@@ -289,7 +356,7 @@ def main():
     parser.add_argument("-B",
                         "--bars",
                         type=int,
-                        default=50,
+                        default=80,
                         help="Number of bars on the video at once")
     parser.add_argument("-O", "--oversample", type=float, default=4,
                         help="Lower values will feel less reactive.")
@@ -300,13 +367,18 @@ def main():
     parser.add_argument("-W",
                         "--width",
                         type=int,
-                        default=480,
+                        default=1920,
                         help="width in pixels of the animation")
     parser.add_argument("-H",
                         "--height",
                         type=int,
-                        default=300,
+                        default=1080,
                         help="height in pixels of the animation")
+    parser.add_argument("-C",
+                        "--cover",
+                        type=Path,
+                        default="cover.png",
+                        help="cover path")
     parser.add_argument("-s", "--seek", type=float, help="Seek to time in seconds in video.")
     parser.add_argument("-d", "--duration", type=float, help="Duration in seconds from seek time.")
     parser.add_argument("audio", type=Path, help='Path to audio file')
@@ -331,7 +403,8 @@ def main():
                   fg_color2=args.color2,
                   bg_color=[1. * bool(args.white)] * 3,
                   size=(args.width, args.height),
-                  stereo=args.stereo)
+                  stereo=args.stereo,
+                  cover_path=args.cover)
 
 
 if __name__ == "__main__":

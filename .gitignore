@@ -4,3 +4,6 @@ build
 dist
 env
 *.mp4
+*.png
+*.wav
+base.svg

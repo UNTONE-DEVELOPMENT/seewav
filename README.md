@@ -1,3 +1,6 @@
+# ! This is a fork by UNTONE, not for public use
+You're free to use this if you want, it adds a few extra features, but this is built bespoke for UNTONE Music videos and won't work great for anything else. Base SVG is excluded by default
+
 # SeeWav: animation generator for audio waveforms
 
 SeeWav can generate some nice animations for your waveform.
@@ -29,8 +32,8 @@ By default, outputs to `out.mp4`. Available options:
 
 ```bash
 usage: seewav [-h] [-r RATE] [--stereo] [-c COLOR] [-c2 COLOR2] [--white]
-              [-B BARS] [-O OVERSAMPLE] [-T TIME] [-S SPEED] [-W WIDTH]
-              [-H HEIGHT] [-s SEEK] [-d DURATION]
+              [-B BARS] [-O OVERSAMPLE] [-T TIME] [-S SPEED] [-W WIDTH] 
+              [-H HEIGHT] [-C COVER] [-s SEEK] [-d DURATION]
               audio [out]
 
 Generate a nice mp4 animation from an audio file.
@@ -39,15 +42,14 @@ positional arguments:
   audio                 Path to audio file
   out                   Path to output file. Default is ./out.mp4
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   -r RATE, --rate RATE  Video framerate.
   --stereo              Create 2 waveforms for stereo files.
   -c COLOR, --color COLOR
                         Color of the bars as `r,g,b` in [0, 1].
   -c2 COLOR2, --color2 COLOR2
-                        Color of the second waveform as `r,g,b` in [0, 1] (for
-                        stereo).
+                        Color of the second waveform as `r,g,b` in [0, 1] (for stereo).
   --white               Use white background. Default is black.
   -B BARS, --bars BARS  Number of bars on the video at once
   -O OVERSAMPLE, --oversample OVERSAMPLE
@@ -59,6 +61,8 @@ optional arguments:
                         width in pixels of the animation
   -H HEIGHT, --height HEIGHT
                         height in pixels of the animation
+  -C COVER, --cover COVER
+                        cover path
   -s SEEK, --seek SEEK  Seek to time in seconds in video.
   -d DURATION, --duration DURATION
                         Duration in seconds from seek time.
