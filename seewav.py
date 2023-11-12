@@ -5,6 +5,15 @@
 """
 Generates a nice waveform visualization from an audio file, save it as a mp4 file.
 """
+import os
+from colorthief import ColorThief
+from PIL import Image
+import colorsys
+import base64
+import tqdm
+import numpy as np
+import cairo
+from gi.repository import Rsvg
 import argparse
 import json
 import math
@@ -15,13 +24,7 @@ from pathlib import Path
 
 import gi
 gi.require_version('Rsvg', '2.0')
-from gi.repository import Rsvg
 
-import cairo
-import numpy as np
-import tqdm
-
-import base64
 
 _is_main = False
 
@@ -57,7 +60,7 @@ def read_info(media):
         'ffprobe', "-loglevel", "panic",
         str(media), '-print_format', 'json', '-show_format', '-show_streams'
     ],
-                  capture_output=True)
+        capture_output=True)
     if proc.returncode:
         raise IOError(f"{media} does not exist or is of a wrong type.")
     return json.loads(proc.stdout.decode('utf-8'))
@@ -128,14 +131,11 @@ def draw_env(envs, out, fg_colors, bg_color, size, image):
     svg.render_cairo(ctx)
     ctx.scale(*size)
 
-
-
-
-    K = len(envs) # Number of waves to draw (waves are stacked vertically)
-    T = len(envs[0]) # Numbert of time steps
-    pad_ratio = 0.1 # spacing ratio between 2 bars
+    K = len(envs)  # Number of waves to draw (waves are stacked vertically)
+    T = len(envs[0])  # Numbert of time steps
+    pad_ratio = 0.1  # spacing ratio between 2 bars
     base_width = 0.86302083333
-    left_pad = (1 - base_width) / 2;
+    left_pad = (1 - base_width) / 2
     width = base_width / (T * (1 + 2 * pad_ratio))
     pad = pad_ratio * width
     delta = 2 * pad + width
@@ -143,17 +143,17 @@ def draw_env(envs, out, fg_colors, bg_color, size, image):
     ctx.set_line_width(width)
     for step in range(T):
         for i in range(K):
-            half = 0.5 * envs[i][step] # (semi-)height of the bar
-            half /= K # as we stack K waves vertically
-            midrule = 0.95 # midrule of i-th wave
+            half = 0.5 * envs[i][step]  # (semi-)height of the bar
+            half /= K  # as we stack K waves vertically
+            midrule = 0.95  # midrule of i-th wave
             ctx.set_source_rgb(*fg_colors[i])
             ctx.move_to(pad + step * delta + left_pad, midrule - half)
             ctx.line_to(pad + step * delta + left_pad, midrule)
             ctx.stroke()
-            #ctx.set_source_rgba(*fg_colors[i], 0.8)
-            #ctx.move_to(pad + step * delta, midrule)
-            #ctx.line_to(pad + step * delta, midrule + 0.9 * half)
-            #ctx.stroke()
+            # ctx.set_source_rgba(*fg_colors[i], 0.8)
+            # ctx.move_to(pad + step * delta, midrule)
+            # ctx.line_to(pad + step * delta, midrule + 0.9 * half)
+            # ctx.stroke()
 
     surface.write_to_png(out)
 
@@ -161,11 +161,6 @@ def draw_env(envs, out, fg_colors, bg_color, size, image):
 def interpole(x1, y1, x2, y2, x):
     return y1 + (y2 - y1) * (x - x1) / (x2 - x1)
 
-from colorthief import ColorThief
-import colorsys
-
-import os, sys
-from PIL import Image
 
 def visualize(audio,
               tmp,
@@ -182,7 +177,13 @@ def visualize(audio,
               bg_color=(1, 1, 1),
               size=(400, 400),
               stereo=False,
-              cover_path="cover.png"
+              cover_path="cover.png",
+              song_data={
+        "title": "title",
+        "artist": "artist",
+        "date": "date",
+        "label": "label"
+                  }
               ):
     """
     Generate the visualisation for the `audio` file, using a `tmp` folder and saving the final
@@ -243,7 +244,7 @@ def visualize(audio,
     dom_col_hsl = []
     for x in dominant_color:
         dom_col_hsl.append(colorsys.rgb_to_hsv(x[0], x[1], x[2]))
-    print(dominant_color);
+    print(dominant_color)
     print(dom_col_hsl)
     hue = 0
     averageSaturation = 0
@@ -275,14 +276,14 @@ def visualize(audio,
     with open('cover-compressed.png', 'rb') as imagefile:
         cover = base64.b64encode(imagefile.read()).decode('ascii')
 
-    imagedata = "data:image/png;base64," 
+    imagedata = "data:image/png;base64,"
     imagedata += cover
 
     svg = svg.replace("IMAGEDATA", imagedata)
-    svg = svg.replace("LABELS", "UNTONE Music")
-    svg = svg.replace("ARTISTS", "Artist Goes Here :)")
-    svg = svg.replace("DATE", "19th December 2023")
-    svg = svg.replace("TRACKNAME", "Track Name")
+    svg = svg.replace("LABELS", song_data["label"])
+    svg = svg.replace("ARTISTS", song_data["artist"])
+    svg = svg.replace("DATE", song_data["date"])
+    svg = svg.replace("TRACKNAME", song_data["title"])
 
     for idx in tqdm.tqdm(range(frames), unit=" frames", ncols=80):
         pos = (((idx / rate)) * sr) / stride / bars
@@ -317,8 +318,8 @@ def visualize(audio,
         "-c:a", "aac", "-vcodec", "libx264", "-crf", "10", "-pix_fmt", "yuv420p", "-shortest",
         out.resolve()
     ],
-           check=True,
-           cwd=tmp)
+        check=True,
+        cwd=tmp)
 
 
 def parse_color(colorstr):
@@ -341,7 +342,7 @@ def main():
                         help="Create 2 waveforms for stereo files.")
     parser.add_argument("-c",
                         "--color",
-                        default=[1,1,1],
+                        default=[1, 1, 1],
                         type=parse_color,
                         dest="color",
                         help="Color of the bars as `r,g,b` in [0, 1].")
@@ -387,7 +388,29 @@ def main():
                         nargs='?',
                         default=Path('out.mp4'),
                         help='Path to output file. Default is ./out.mp4')
+    parser.add_argument("--artist",
+                        nargs='?',
+                        default="artist",
+                        help='Song artist(s)')
+    parser.add_argument("--label",
+                        nargs='?',
+                        default="label",
+                        help='Song label(s)')
+    parser.add_argument("--date",
+                        nargs='?',
+                        default="date",
+                        help='Song release date')
+    parser.add_argument("--title",
+                        nargs='?',
+                        default="title",
+                        help='Song title')
     args = parser.parse_args()
+    songData = {
+        "title": args.title,
+        "artist": args.artist,
+        "date": args.date,
+        "label": args.label
+    }
     with tempfile.TemporaryDirectory() as tmp:
         visualize(args.audio,
                   Path(tmp),
@@ -404,7 +427,8 @@ def main():
                   bg_color=[1. * bool(args.white)] * 3,
                   size=(args.width, args.height),
                   stereo=args.stereo,
-                  cover_path=args.cover)
+                  cover_path=args.cover,
+                  song_data=songData)
 
 
 if __name__ == "__main__":
